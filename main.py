@@ -1,107 +1,160 @@
 # %%
 import numpy as np
-import pandas as pd
-from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
-from matplotlib.font_manager import FontProperties
-
-font = FontProperties(fname='C:/Windows/Fonts/simsun.ttc')
-
-# # 参数列表
-# data = {
-#     '参数': [r'$\gamma_{I}$',r'$\gamma_{Xe}$', r'$\lambda_{I}$',r'$\lambda_{Xe}$',r'$\Sigma_{a,Xe}$',r'$\Sigma_f$',r'$\Phi$'],
-#     '单位': ['/', '/', r'$s^{-1}$',r'$s^{-1}$','barn',r'$cm^{-1}$',r'$cm^{-2}s^{-1}$'],
-#     '值': ['6.386e-2','0.228e-2','2.87e-5', '2.09e-5','2.7e6','0.043','3e13']
-# }
-
-# df = pd.DataFrame(data)
-# # 绘制表格
-# fig, ax = plt.subplots()
-# ax.axis('tight')
-# ax.axis('off')
-# table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center', colColours=['#f5f5f5']*3)
-# table.auto_set_font_size(False)
-# table.set_fontsize(12)
-# table.scale(1.2, 1.2)
-
-# # 设置字体
-# for key, cell in table.get_celld().items():
-#     cell._text.set_fontproperties(font)
-# plt.show()
-
 
 # %%
-
-# 参数设置
-gamma_I = 6.386e-2
-gamma_Xe = 0.228e-2
-lambda_I = 2.87e-5
-lambda_Xe = 2.09e-5
-Sigma_a_Xe = 2.7e-18
-Sigma_f = 0.043
-
-def iodine_xenon_dynamics (t, y,Phi):
-    """
-    y[0] -> I (碘浓度)
-    y[1] -> [Xe-135] (氙-135浓度)
-    """
-    I, Xe135 = y
-
-    dIdt = gamma_I * Sigma_f * Phi - lambda_I*I
-
-    dXe135dt = gamma_Xe * Sigma_f * Phi + lambda_I* I - (lambda_Xe+Sigma_a_Xe*Phi)*Xe135
-
-    return [dIdt, dXe135dt]
-
-def euler_method(iodine_xenon_dynamics, t, initial_conditions,Phi):
-    steps = int(t/delta_t)
-    I_values = np.zeros(steps+1)
-    Xe_values = np.zeros(steps+1)
-    I_values[0] = initial_conditions[0]
-    Xe_values[0] = initial_conditions[1]
-    for i in range(1, int(steps)+1):
-        I_values[i] = I_values[i-1] + delta_t * iodine_xenon_dynamics(i*delta_t, [I_values[i-1], Xe_values[i-1]],Phi)[0]
-        Xe_values[i] = Xe_values[i-1] + delta_t * iodine_xenon_dynamics(i*delta_t, [I_values[i-1], Xe_values[i-1]],Phi)[1]
-    return I_values, Xe_values
+import numpy as np
+import matplotlib.pyplot as plt
 
 # %%
+# 参数定义
+# 空间域
+L = 10.0  # 一维空间长度，单位cm
+nx = 100  # 离散空间点数
+dx = L / (nx - 1)
+x = np.linspace(0, L, nx)
 
-## 模拟启动过程，初始条件为0
-initial_conditions = [0, 0] # 初始条件
-delta_t = 1 # 时间步长
-t = 1080000 # 总时间
-Phi_start=3e13 # 初始通量
+# 时间域
+total_time = 1000  # 总时间，单位s
+delta_t = 0.1      # 时间步长，单位s
+nt = int(total_time / delta_t)
 
-I_values,Xe_values=euler_method(iodine_xenon_dynamics, t, initial_conditions,Phi_start)
+# 物理参数
+D = 1.0            # 扩散系数，cm^2/s
+sigma_a_Xe = 2.7e-18  # Xe吸收截面，cm^2
+sigma_a_I = 1.0e-20   # I吸收截面，cm^2
+nu = 2.73             # 中子产额
+Sigma_f = 0.043      # 裂变截面，cm^2
+gamma_I = 6.386e-2   # I的产生速率
+gamma_Xe = 0.228e-2  # Xe的产生速率
+lambda_I = 2.87e-5   # I的衰变常数，s^{-1}
+lambda_Xe = 2.09e-5  # Xe的衰变常数，s^{-1}
+beta = 0.0065        # 缓发中子产额
+Lambda = 0.1         # 中子寿命，s^{-1}
+rho_0 = 0            # 初始反应性
+Delta_rho_Xe = 0.000  # Xe引起的反应性变化
+v=220000               # 中子速度，cm/s
 
-N_I_ideal = gamma_I * Sigma_f * Phi_start / lambda_I
-N_Xe_ideal = (gamma_I+gamma_Xe)* Sigma_f * Phi_start / (lambda_Xe+Sigma_a_Xe*Phi_start)
+# Derived parameters
+rho = rho_0 + Delta_rho_Xe  # Reactivity
 
-plt.figure()
-time = np.arange(0, t + delta_t, delta_t) / (24 * 3600)
-plt.plot(time, I_values, label='Iodine Concentration')
-plt.plot(time, Xe_values, label='Xenon-135 Concentration')
-plt.axhline(y=N_I_ideal, color='r', linestyle='--', label='Ideal Iodine Concentration')
-plt.axhline(y=N_Xe_ideal, color='b', linestyle='--', label='Ideal Xenon-135 Concentration')
-# plt.yscale('log')
-plt.xlabel('Time (days)')
-plt.ylabel('Concentration')
+# Initial conditions
+phi_initial = np.ones(nx) * 1e14    # 初始中子通量
+N_I_initial = np.zeros(nx)          # 初始I-135浓度
+N_Xe_initial = np.zeros(nx)         # 初始Xe-135浓度
+
+# %%
+# 初始化
+phi = phi_initial.copy()
+N_I = N_I_initial.copy()
+N_Xe = N_Xe_initial.copy()
+
+# 存储结果
+phi_history = []
+N_I_history = []
+N_Xe_history = []
+
+# %%
+def compute_phi_derivative(phi, D, sigma_a_Xe, nu, Sigma_f, rho, beta, Lambda, x, dx):
+    """
+    Compute the time derivative of phi using finite differences for spatial derivatives.
+    """
+    dphi_dt = np.zeros_like(phi)
+    
+    # Compute second spatial derivative using central differences
+    d2phi_dx2 = np.zeros_like(phi)
+    d2phi_dx2[1:-1] = (phi[2:] - 2 * phi[1:-1] + phi[:-2]) / dx**2
+    
+    # Boundary conditions (e.g., phi=0 at boundaries)
+    d2phi_dx2[0] = 0
+    d2phi_dx2[-1] = 0
+    
+    # Compute dn/dt and rho (if necessary)
+    # Assuming n = phi / v, but v is not defined. If v=1, then n=phi
+    # Adjust as per actual definition
+    
+    # Example: v=1 for simplicity
+    v = 1.0
+    n = phi / v
+    dn_dt = (rho * Lambda)  # Assuming dn/dt = (k_eff -1)/Lambda, where rho = (k_eff -1)/k_eff
+    
+    # Update dphi/dt based on the given PDE
+    dphi_dt = D * d2phi_dx2 - sigma_a_Xe * phi + nu * Sigma_f * phi - ((rho - beta) / Lambda) * phi
+    
+    return dphi_dt
+
+def iodine_xenon_dynamics(phi, N_I, N_Xe, gamma_I, gamma_Xe, Sigma_f_I, lambda_I, lambda_Xe, sigma_a_Xe):
+    """
+    Compute the time derivatives of I and Xe-135 concentrations.
+    """
+    dN_I_dt = gamma_I * Sigma_f_I * phi - lambda_I * N_I
+    dN_Xe_dt = lambda_I * N_I + gamma_Xe * Sigma_f_I * phi - (lambda_Xe + sigma_a_Xe * phi) * N_Xe
+    return dN_I_dt, dN_Xe_dt
+
+# %% [markdown]
+# ## Simulation Loop
+
+# %%
+for t_step in range(nt):
+    # Compute derivatives
+    dphi_dt = compute_phi_derivative(phi, D, sigma_a_Xe, nu, Sigma_f, rho, beta, Lambda, x, dx)
+    dN_I_dt, dN_Xe_dt = iodine_xenon_dynamics(phi, N_I, N_Xe, gamma_I, gamma_Xe, Sigma_f, lambda_I, lambda_Xe, sigma_a_Xe)
+    
+    # Update concentrations using Euler method
+    phi += delta_t * dphi_dt
+    N_I += delta_t * dN_I_dt
+    N_Xe += delta_t * dN_Xe_dt
+    
+    # Apply boundary conditions (e.g., phi=0 at boundaries)
+    phi[0] = 0
+    phi[-1] = 0
+    
+    # Store results for visualization every 1000 steps
+    if t_step % 1000 == 0:
+        phi_history.append(phi.copy())
+        N_I_history.append(N_I.copy())
+        N_Xe_history.append(N_Xe.copy())
+
+# %% [markdown]
+# ## Visualization
+
+# %%
+# Time points to visualize
+time_points = np.linspace(0, total_time, len(phi_history))
+
+# Plot neutron flux phi at different times
+plt.figure(figsize=(10, 6))
+for i, phi_snapshot in enumerate(phi_history):
+    plt.plot(x, phi_snapshot, label=f't={time_points[i]:.1f}s')
+plt.xlabel('Position x (cm)')
+plt.ylabel('Neutron Flux φ(x, t) (neutrons/cm²/s)')
+plt.title('Neutron Flux Distribution Over Time')
 plt.legend()
-plt.savefig('Iodine_Xenon_start.png')
-plt.close()
+plt.grid(True)
+plt.savefig('Neutron_Flux_Distribution.png')
+plt.show()
 
-## 模拟停堆过程 
-Phi_stop=0
-stop_condition = [I_values[-1], Xe_values[-1]]
-
-I_values_final,Xe_values_final=euler_method(iodine_xenon_dynamics, t, stop_condition,Phi_stop)
-
-plt.figure()
-time = np.arange(0, t + delta_t, delta_t) / (24 * 3600)
-plt.plot(time, I_values_final, label='Iodine Concentration')
-plt.plot(time, Xe_values_final, label='Xenon-135 Concentration')
-plt.xlabel('Time (days)')
-plt.ylabel('Concentration')
+# Plot Iodine Concentration N_I at different times
+plt.figure(figsize=(10, 6))
+for i, N_I_snapshot in enumerate(N_I_history):
+    plt.plot(x, N_I_snapshot, label=f't={time_points[i]:.1f}s')
+plt.xlabel('Position x (cm)')
+plt.ylabel('Iodine Concentration N_I(x, t)')
+plt.title('Iodine Concentration Distribution Over Time')
 plt.legend()
-plt.savefig('Iodine_Xenon_stop.png')
-plt.close()
+plt.grid(True)
+plt.savefig('Iodine_Concentration_Distribution.png')
+plt.show()
+
+# Plot Xenon-135 Concentration N_Xe at different times
+plt.figure(figsize=(10, 6))
+for i, N_Xe_snapshot in enumerate(N_Xe_history):
+    plt.plot(x, N_Xe_snapshot, label=f't={time_points[i]:.1f}s')
+plt.xlabel('Position x (cm)')
+plt.ylabel('Xenon-135 Concentration N_Xe(x, t)')
+plt.title('Xenon-135 Concentration Distribution Over Time')
+plt.legend()
+plt.grid(True)
+plt.savefig('Xenon135_Concentration_Distribution.png')
+plt.show()
+
