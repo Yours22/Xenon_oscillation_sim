@@ -22,7 +22,6 @@ nt = int(total_time / delta_t)
 # 物理参数
 D = 1.0            # 扩散系数，cm^2/s
 sigma_a_Xe = 2.7e-18  # Xe吸收截面，cm^2
-sigma_a_I = 1.0e-20   # I吸收截面，cm^2
 nu = 2.73             # 中子产额
 Sigma_f = 0.043      # 裂变截面，cm^2
 gamma_I = 6.386e-2   # I的产生速率
@@ -30,7 +29,7 @@ gamma_Xe = 0.228e-2  # Xe的产生速率
 lambda_I = 2.87e-5   # I的衰变常数，s^{-1}
 lambda_Xe = 2.09e-5  # Xe的衰变常数，s^{-1}
 beta = 0.0065        # 缓发中子产额
-Lambda = 0.1         # 中子寿命，s^{-1}
+Lambda = 0.0001         # 中子寿命，s^{-1}
 rho_0 = 0            # 初始反应性
 Delta_rho_Xe = 0.000  # Xe引起的反应性变化
 v=220000               # 中子速度，cm/s
