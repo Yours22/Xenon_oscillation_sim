@@ -6,32 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 
 font = FontProperties(fname='C:/Windows/Fonts/simsun.ttc')
-
-# # 参数列表
-# data = {
-#     '参数': [r'$\gamma_{I}$',r'$\gamma_{Xe}$', r'$\lambda_{I}$',r'$\lambda_{Xe}$',r'$\Sigma_{a,Xe}$',r'$\Sigma_f$',r'$\Phi$'],
-#     '单位': ['/', '/', r'$s^{-1}$',r'$s^{-1}$','barn',r'$cm^{-1}$',r'$cm^{-2}s^{-1}$'],
-#     '值': ['6.386e-2','0.228e-2','2.87e-5', '2.09e-5','2.7e6','0.043','3e13']
-# }
-
-# df = pd.DataFrame(data)
-# # 绘制表格
-# fig, ax = plt.subplots()
-# ax.axis('tight')
-# ax.axis('off')
-# table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center', colColours=['#f5f5f5']*3)
-# table.auto_set_font_size(False)
-# table.set_fontsize(12)
-# table.scale(1.2, 1.2)
-
-# # 设置字体
-# for key, cell in table.get_celld().items():
-#     cell._text.set_fontproperties(font)
-# plt.show()
-
-
 # %%
-
 # 参数设置
 gamma_I = 6.386e-2
 gamma_Xe = 0.228e-2
@@ -90,7 +65,7 @@ plt.legend()
 plt.savefig('Iodine_Xenon_start.png')
 plt.close()
 
-## 模拟停堆过程 
+# 模拟停堆过程 
 Phi_stop=0
 stop_condition = [I_values[-1], Xe_values[-1]]
 
@@ -103,5 +78,28 @@ plt.plot(time, Xe_values_final, label='Xenon-135 Concentration')
 plt.xlabel('Time (days)')
 plt.ylabel('Concentration')
 plt.legend()
-plt.savefig('Iodine_Xenon_stop.png')
+plt.savefig('results\Iodine_Xenon_stop.png')
 plt.close()
+
+# ## 到达稳态后开始耦合，即
+# initial_conditions = [I_values[-1], Xe_values[-1]] # 初始条件
+# delta_t = 1 # 时间步长
+# t = 1080000 # 总时间
+# Phi_start=2.5e15 # 初始通量
+
+# I_values,Xe_values=euler_method(iodine_xenon_dynamics, t, initial_conditions,Phi_start)
+
+# # N_I_ideal = gamma_I * Sigma_f * Phi_start / lambda_I
+# # N_Xe_ideal = (gamma_I+gamma_Xe)* Sigma_f * Phi_start / (lambda_Xe+Sigma_a_Xe*Phi_start)
+
+# plt.figure()
+# time = np.arange(0, t + delta_t, delta_t) / (24 * 3600)
+# plt.plot(time, I_values, label='Iodine Concentration')
+# plt.plot(time, Xe_values, label='Xenon-135 Concentration')
+# plt.axhline(y=N_I_ideal, color='r', linestyle='--', label='Ideal Iodine Concentration')
+# # plt.yscale('log')
+# plt.xlabel('Time (days)')
+# plt.ylabel('Concentration')
+# plt.legend()
+# plt.savefig('Iodine_Xenon_ongoing.png')
+# plt.close()
