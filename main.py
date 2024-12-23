@@ -9,8 +9,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 参数定义
 # 空间域
-L = 1000  # 一维空间长度，单位cm
-nx = 100  # 增加空间离散点数以提高空间分辨率
+L = 100  # 一维空间长度，单位cm
+nx = 40  # 增加空间离散点数以提高空间分辨率
 dx = L / (nx - 1)
 x = np.linspace(0, L, nx)
 
@@ -29,7 +29,7 @@ gamma_Xe = 0.228e-2  # Xe-135的产额
 lambda_I = 2.87e-5   # I-135的衰变常数，s⁻¹
 lambda_Xe = 2.09e-5  # Xe-135的衰变常数，s⁻¹
 beta = 0.0065        # 缓发中子产额
-Lambda = 0.0001      # 中子寿命，s⁻¹
+Lambda = 0.0003      # 中子寿命，s⁻¹
 rho_0 = 0            # 初始反应性
 Delta_rho_Xe = 0.000  # Xe引起的反应性变化
 v = 220000               # 中子速度，cm/s
@@ -71,9 +71,8 @@ def compute_phi_derivative(phi, rho, beta, Lambda, N_Xe):
     # 计算二阶导数
     d2phi_dx2 = (phi_extended[2:] - 2 * phi_extended[1:-1] + phi_extended[:-2]) / dx**2
 
-    # 计算 dphi/dt
+    # 计算 dphi/dt ，暂时不考虑缓发中子
     dphi_dt = D * d2phi_dx2 - sigma_a_Xe * N_Xe * phi + nu * Sigma_f * phi
-    # 如果需要包含其他项，可以取消注释并调整
     # dphi_dt = (D * d2phi_dx2 - sigma_a_Xe * N_Xe * phi + nu * Sigma_f * phi 
     #            - ((rho - beta) / Lambda) * phi)
 
@@ -84,13 +83,13 @@ def iodine_xenon_dynamics(phi, N_I, N_Xe):
     dN_Xe_dt = lambda_I * N_I + gamma_Xe * Sigma_f * phi - (lambda_Xe + sigma_a_Xe * phi) * N_Xe
     return dN_I_dt, dN_Xe_dt
 
-# 收敛参数定义
-convergence_tol = 1e3  # 定义收敛的容忍度（根据问题规模调整）
-convergence_steps = 100  # 连续满足收敛条件的步数
+# 收敛参数定义，暂时没有用到，也不知道怎么用
+convergence_tol = 1e6  # 定义收敛的容忍度（根据问题规模调整）
+convergence_steps = 10  # 连续满足收敛条件的步数
 convergence_window = []  # 用于记录最近的变化量
 
 # 最大迭代步数（可根据需要调整）
-max_steps = 170000
+max_steps = 145000
 
 # 时间循环
 for t_step in range(max_steps):
@@ -110,7 +109,7 @@ for t_step in range(max_steps):
     # 数据验证
     if np.any(np.isnan(phi_new)) or np.any(np.isinf(phi_new)):
         logging.error(f'Invalid values detected in phi at time step {t_step}, time {current_time:.2f}s')
-        break  # 或者采取其他错误处理措施
+        break 
 
     if np.any(np.isnan(N_I_new)) or np.any(np.isinf(N_I_new)):
         logging.error(f'Invalid values detected in N_I at time step {t_step}, time {current_time:.2f}s')
@@ -175,11 +174,6 @@ for t_step in range(max_steps):
         time_history[current_store] = current_time
         current_store += 1
 
-    # 不稳定性检测（例如，变量超过一定范围）
-    if np.any(phi > 1e20) or np.any(N_I > 1e10) or np.any(N_Xe > 1e10):
-        logging.error(f'Variables exceeded physical limits at time step {t_step}, time {current_time:.2f}s')
-        break
-
 # 处理最后一步（如果未存储）
 if current_store < stored_steps:
     phi_history[current_store] = phi
@@ -228,7 +222,7 @@ if np.any(np.isnan(time_history)) or np.any(np.isinf(time_history)):
 
 # 选择绘图时使用的时间点
 # 例如，绘制初始、中间和结束时刻
-plot_times = [0, max_steps * delta_t / 4, max_steps * delta_t / 2, max_steps * delta_t]  
+plot_times = [0, max_steps * delta_t / 4, max_steps * delta_t / 2, max_steps * delta_t*9/10, (max_steps-1000 )* delta_t,max_steps * delta_t ]  
 
 plot_indices = []
 for t in plot_times:
@@ -243,144 +237,130 @@ output_dir = 'results'
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
+# 创建子图
+fig, axs = plt.subplots(3, 2, figsize=(15, 18))
+
 # 绘制中子通量φ(x, t)的分布
-plt.figure(figsize=(10, 6))
 for idx, t in zip(plot_indices, plot_times):
-    plt.plot(x, phi_history[idx], label=f't={time_history[idx]:.1f}s')
-plt.xlabel('Position x (cm)')
-plt.ylabel('Neutron Flux φ(x, t) (neutrons/cm²/s)')
-plt.yscale('log')
-plt.title('Neutron Flux Distribution at Selected Times')
-plt.legend()
-plt.grid(True)
-plt.savefig(os.path.join(output_dir, 'Neutron_Flux_Distribution_Selected_Times.png'))
-# plt.show()
+    axs[0, 0].plot(x, phi_history[idx], label=f't={time_history[idx]:.1f}s')
+axs[0, 0].set_xlabel('Position x (cm)')
+axs[0, 0].set_ylabel('Neutron Flux φ(x, t) (neutrons/cm²/s)')
+axs[0, 0].set_yscale('log')
+axs[0, 0].set_title('Neutron Flux Distribution at Selected Times')
+axs[0, 0].legend()
+axs[0, 0].grid(True)
 
 # 绘制I-135浓度分布
-plt.figure(figsize=(10, 6))
 for idx, t in zip(plot_indices, plot_times):
-    plt.plot(x, N_I_history[idx], label=f't={time_history[idx]:.1f}s')
-plt.xlabel('Position x (cm)')
-plt.ylabel('Iodine Concentration N_I(x, t)')
-plt.yscale('log')
-plt.title('Iodine Concentration Distribution at Selected Times')
-plt.legend()
-plt.grid(True)
-plt.savefig(os.path.join(output_dir, 'Iodine_Concentration_Distribution_Selected_Times.png'))
-# plt.show()
+    axs[0, 1].plot(x, N_I_history[idx], label=f't={time_history[idx]:.1f}s')
+axs[0, 1].set_xlabel('Position x (cm)')
+axs[0, 1].set_ylabel('Iodine Concentration N_I(x, t)')
+axs[0, 1].set_yscale('log')
+axs[0, 1].set_title('Iodine Concentration Distribution at Selected Times')
+axs[0, 1].legend()
+axs[0, 1].grid(True)
 
 # 绘制Xe-135浓度分布
-plt.figure(figsize=(10, 6))
 for idx, t in zip(plot_indices, plot_times):
-    plt.plot(x, N_Xe_history[idx], label=f't={time_history[idx]:.1f}s')
-plt.xlabel('Position x (cm)')
-plt.ylabel('Xenon-135 Concentration N_Xe(x, t)')
-plt.yscale('log')
-plt.title('Xenon-135 Concentration Distribution at Selected Times')
-plt.legend()
-plt.grid(True)
-plt.savefig(os.path.join(output_dir, 'Xenon135_Concentration_Distribution_Selected_Times.png'))
-# plt.show()
+    axs[1, 0].plot(x, N_Xe_history[idx], label=f't={time_history[idx]:.1f}s')
+axs[1, 0].set_xlabel('Position x (cm)')
+axs[1, 0].set_ylabel('Xenon-135 Concentration N_Xe(x, t)')
+axs[1, 0].set_yscale('log')
+axs[1, 0].set_title('Xenon-135 Concentration Distribution at Selected Times')
+axs[1, 0].legend()
+axs[1, 0].grid(True)
 
-
-# 使用热图显示随时间和空间变化的分布
 # 中子通量热图
-plt.figure(figsize=(10, 6))
 extent = [x.min(), x.max(), time_history.min(), time_history.max()]
-plt.imshow(phi_history, aspect='auto', extent=extent, origin='lower', cmap='viridis')
-plt.colorbar(label='Neutron Flux φ(x, t) (neutrons/cm²/s)')
-plt.xlabel('Position x (cm)')
-plt.ylabel('Time t (s)')
-plt.title('Neutron Flux Distribution Over Time')
-plt.savefig(os.path.join(output_dir, 'Neutron_Flux_Heatmap.png'))
-plt.show()
+im1 = axs[1, 1].imshow(phi_history, aspect='auto', extent=extent, origin='lower', cmap='viridis')
+fig.colorbar(im1, ax=axs[1, 1], label='Neutron Flux φ(x, t) (neutrons/cm²/s)')
+axs[1, 1].set_xlabel('Position x (cm)')
+axs[1, 1].set_ylabel('Time t (s)')
+axs[1, 1].set_title('Neutron Flux Distribution Over Time')
 
 # I-135浓度热图
-plt.figure(figsize=(10, 6))
-plt.imshow(N_I_history, aspect='auto', extent=extent, origin='lower', cmap='plasma')
-plt.colorbar(label='Iodine Concentration N_I(x, t)')
-plt.xlabel('Position x (cm)')
-plt.ylabel('Time t (s)')
-plt.title('Iodine Concentration Distribution Over Time')
-plt.savefig(os.path.join(output_dir, 'Iodine_Concentration_Heatmap.png'))
-plt.show()
+im2 = axs[2, 0].imshow(N_I_history, aspect='auto', extent=extent, origin='lower', cmap='plasma')
+fig.colorbar(im2, ax=axs[2, 0], label='Iodine Concentration N_I(x, t)')
+axs[2, 0].set_xlabel('Position x (cm)')
+axs[2, 0].set_ylabel('Time t (s)')
+axs[2, 0].set_title('Iodine Concentration Distribution Over Time')
 
 # Xe-135浓度热图
-plt.figure(figsize=(10, 6))
-plt.imshow(N_Xe_history, aspect='auto', extent=extent, origin='lower', cmap='inferno')
-plt.colorbar(label='Xenon-135 Concentration N_Xe(x, t)')
-plt.xlabel('Position x (cm)')
-plt.ylabel('Time t (s)')
-plt.title('Xenon-135 Concentration Distribution Over Time')
-plt.savefig(os.path.join(output_dir, 'Xenon135_Concentration_Heatmap.png'))
+im3 = axs[2, 1].imshow(N_Xe_history, aspect='auto', extent=extent, origin='lower', cmap='inferno')
+fig.colorbar(im3, ax=axs[2, 1], label='Xenon-135 Concentration N_Xe(x, t)')
+axs[2, 1].set_xlabel('Position x (cm)')
+axs[2, 1].set_ylabel('Time t (s)')
+axs[2, 1].set_title('Xenon-135 Concentration Distribution Over Time')
+
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, 'Combined_Plots.png'))
 plt.show()
 
+# # 设置全局绘图样式
+# plt.style.use('ggplot')
 
-# 设置全局绘图样式
-plt.style.use('ggplot')
+# # 创建中子通量动画
+# def create_flux_animation(x, phi_history, time_history, output_path):
+#     fig, ax = plt.subplots(figsize=(10, 6))
 
-# 创建中子通量动画
-def create_flux_animation(x, phi_history, time_history, output_path):
-    fig, ax = plt.subplots(figsize=(10, 6))
+#     def animate(i):
+#         ax.clear()
+#         ax.plot(x, phi_history[i], color='blue')
+#         ax.set_xlabel('Position x (cm)')
+#         ax.set_ylabel('Neutron Flux φ(x, t) (neutrons/cm²/s)')
+#         ax.set_yscale('log')
+#         ax.set_title(f'Neutron Flux Distribution at t={time_history[i]:.1f} s')
+#         ax.grid(True)
 
-    def animate(i):
-        ax.clear()
-        ax.plot(x, phi_history[i], color='blue')
-        ax.set_xlabel('Position x (cm)')
-        ax.set_ylabel('Neutron Flux φ(x, t) (neutrons/cm²/s)')
-        ax.set_yscale('log')
-        ax.set_title(f'Neutron Flux Distribution at t={time_history[i]:.1f} s')
-        ax.grid(True)
+#     flux_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
+#     flux_anim.save(output_path, writer='imagemagick')
+#     plt.close(fig)
 
-    flux_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
-    flux_anim.save(output_path, writer='imagemagick')
-    plt.close(fig)
+# # 创建I-135浓度动画
+# def create_I_concentration_animation(x, N_I_history, time_history, output_path):
+#     fig, ax = plt.subplots(figsize=(10, 6))
 
-# 创建I-135浓度动画
-def create_I_concentration_animation(x, N_I_history, time_history, output_path):
-    fig, ax = plt.subplots(figsize=(10, 6))
+#     def animate(i):
+#         ax.clear()
+#         ax.plot(x, N_I_history[i], color='green')
+#         ax.set_xlabel('Position x (cm)')
+#         ax.set_ylabel('Iodine Concentration N_I(x, t)')
+#         ax.set_yscale('log')
+#         ax.set_title(f'Iodine Concentration Distribution at t={time_history[i]:.1f} s')
+#         ax.grid(True)
 
-    def animate(i):
-        ax.clear()
-        ax.plot(x, N_I_history[i], color='green')
-        ax.set_xlabel('Position x (cm)')
-        ax.set_ylabel('Iodine Concentration N_I(x, t)')
-        ax.set_yscale('log')
-        ax.set_title(f'Iodine Concentration Distribution at t={time_history[i]:.1f} s')
-        ax.grid(True)
+#     I_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
+#     I_anim.save(output_path, writer='imagemagick')
+#     plt.close(fig)
 
-    I_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
-    I_anim.save(output_path, writer='imagemagick')
-    plt.close(fig)
+# # 创建Xe-135浓度动画
+# def create_Xe_concentration_animation(x, N_Xe_history, time_history, output_path):
+#     fig, ax = plt.subplots(figsize=(10, 6))
 
-# 创建Xe-135浓度动画
-def create_Xe_concentration_animation(x, N_Xe_history, time_history, output_path):
-    fig, ax = plt.subplots(figsize=(10, 6))
+#     def animate(i):
+#         ax.clear()
+#         ax.plot(x, N_Xe_history[i], color='red')
+#         ax.set_xlabel('Position x (cm)')
+#         ax.set_ylabel('Xenon-135 Concentration N_Xe(x, t)')
+#         ax.set_yscale('log')
+#         ax.set_title(f'Xenon-135 Concentration Distribution at t={time_history[i]:.1f} s')
+#         ax.grid(True)
 
-    def animate(i):
-        ax.clear()
-        ax.plot(x, N_Xe_history[i], color='red')
-        ax.set_xlabel('Position x (cm)')
-        ax.set_ylabel('Xenon-135 Concentration N_Xe(x, t)')
-        ax.set_yscale('log')
-        ax.set_title(f'Xenon-135 Concentration Distribution at t={time_history[i]:.1f} s')
-        ax.grid(True)
+#     Xe_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
+#     Xe_anim.save(output_path, writer='imagemagick')
+#     plt.close(fig)
 
-    Xe_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
-    Xe_anim.save(output_path, writer='imagemagick')
-    plt.close(fig)
+# # 保存动画的路径
+# flux_gif_path = os.path.join(output_dir, 'Neutron_Flux_Distribution.gif')
+# I_gif_path = os.path.join(output_dir, 'Iodine_Concentration_Distribution.gif')
+# Xe_gif_path = os.path.join(output_dir, 'Xenon135_Concentration_Distribution.gif')
 
-# 保存动画的路径
-flux_gif_path = os.path.join(output_dir, 'Neutron_Flux_Distribution.gif')
-I_gif_path = os.path.join(output_dir, 'Iodine_Concentration_Distribution.gif')
-Xe_gif_path = os.path.join(output_dir, 'Xenon135_Concentration_Distribution.gif')
+# # 创建并保存动画
+# create_flux_animation(x, phi_history, time_history, flux_gif_path)
+# create_I_concentration_animation(x, N_I_history, time_history, I_gif_path)
+# create_Xe_concentration_animation(x, N_Xe_history, time_history, Xe_gif_path)
 
-# 创建并保存动画
-create_flux_animation(x, phi_history, time_history, flux_gif_path)
-create_I_concentration_animation(x, N_I_history, time_history, I_gif_path)
-create_Xe_concentration_animation(x, N_Xe_history, time_history, Xe_gif_path)
-
-print(f"动画已保存到 {output_dir}")
+# print(f"动画已保存到 {output_dir}")
 
 
-print('Simulation and plotting completed successfully!')
+# print('Simulation and plotting completed successfully!')
