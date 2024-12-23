@@ -58,15 +58,22 @@ time_history = np.zeros(stored_steps)
 
 current_store = 0
 
+import numpy as np
+
 def compute_phi_derivative(phi, rho, beta, Lambda, N_Xe):
     # 引入虚拟点
     phi_extended = np.zeros(nx + 2, dtype=np.float64)
     phi_extended[1:-1] = phi
 
     # 应用第一类边界条件（Dirichlet 边界条件）
-    # 假设边界值固定为0
+    # 假设左边界和右边界的phi值为固定值，可以根据具体问题设定
+    # 例如，将边界值固定为0
     phi_extended[0] = 0.0          # 左边界
     phi_extended[-1] = 0.0         # 右边界
+
+    # 如果边界值不是0，可以将其设为phi的边界值
+    # phi_extended[0] = phi[0]     # 左边界固定为phi的第一个值
+    # phi_extended[-1] = phi[-1]   # 右边界固定为phi的最后一个值
 
     # 计算二阶导数
     d2phi_dx2 = (phi_extended[2:] - 2 * phi_extended[1:-1] + phi_extended[:-2]) / dx**2
@@ -79,86 +86,51 @@ def compute_phi_derivative(phi, rho, beta, Lambda, N_Xe):
 
     return dphi_dt
 
+
 def iodine_xenon_dynamics(phi, N_I, N_Xe):
     dN_I_dt = gamma_I * Sigma_f * phi - lambda_I * N_I
     dN_Xe_dt = lambda_I * N_I + gamma_Xe * Sigma_f * phi - (lambda_Xe + sigma_a_Xe * phi) * N_Xe
     return dN_I_dt, dN_Xe_dt
 
-# 收敛参数定义
-convergence_tol = 1e3  # 定义收敛的容忍度（根据问题规模调整）
-convergence_steps = 100  # 连续满足收敛条件的步数
-convergence_window = []  # 用于记录最近的变化量
-
-# 最大迭代步数（可根据需要调整）
 max_steps = 170000
 
 # 时间循环
 for t_step in range(max_steps):
-    if t_step >= nt:
-        logging.warning('Reached the predefined maximum number of iterations.')
-        break
-
+    print(f'Processing time step {t_step}/{nt}', end='\r')
     current_time = t_step * delta_t
-
-    # 计算动态
+    
     dN_I_dt, dN_Xe_dt = iodine_xenon_dynamics(phi, N_I, N_Xe)
-    N_I_new = N_I + delta_t * dN_I_dt
-    N_Xe_new = N_Xe + delta_t * dN_Xe_dt
+    N_I += delta_t * dN_I_dt
+    N_Xe += delta_t * dN_Xe_dt
     dphi_dt = compute_phi_derivative(phi, rho, beta, Lambda, N_Xe)
-    phi_new = phi + delta_t * dphi_dt
+    phi += delta_t * dphi_dt
+
+    # # 边界条件
+    # phi[0] = 0
+    # phi[-1] = 0
 
     # 数据验证
-    if np.any(np.isnan(phi_new)) or np.any(np.isinf(phi_new)):
+    if np.any(np.isnan(phi)) or np.any(np.isinf(phi)):
         logging.error(f'Invalid values detected in phi at time step {t_step}, time {current_time:.2f}s')
+        print(phi)
         break  # 或者采取其他错误处理措施
-
-    if np.any(np.isnan(N_I_new)) or np.any(np.isinf(N_I_new)):
+    
+    if np.any(np.isnan(N_I)) or np.any(np.isinf(N_I)):
         logging.error(f'Invalid values detected in N_I at time step {t_step}, time {current_time:.2f}s')
         break
-
-    if np.any(np.isnan(N_Xe_new)) or np.any(np.isinf(N_Xe_new)):
+    
+    if np.any(np.isnan(N_Xe)) or np.any(np.isinf(N_Xe)):
         logging.error(f'Invalid values detected in N_Xe at time step {t_step}, time {current_time:.2f}s')
         break
+    # # 强制非负性
+    # N_I = np.maximum(N_I, 0)
+    # N_Xe = np.maximum(N_Xe, 0)
+    # phi = np.maximum(phi, 0)
 
-    # 更新变量
-    phi = phi_new
-    N_I = N_I_new
-    N_Xe = N_Xe_new
-
-    # 计算变化量（使用绝对差的最大值作为变化指标）
-    delta_phi = np.max(np.abs(phi - phi_history[current_store - 1] if current_store > 0 else phi))
-    delta_N_I = np.max(np.abs(N_I - (N_I_history[current_store - 1] if current_store > 0 else N_I)))
-    delta_N_Xe = np.max(np.abs(N_Xe - (N_Xe_history[current_store - 1] if current_store > 0 else N_Xe)))
-    max_delta = max(delta_phi, delta_N_I, delta_N_Xe)
-
-    # 更新收敛窗口
-    convergence_window.append(max_delta)
-    if len(convergence_window) > convergence_steps:
-        convergence_window.pop(0)
-
-    # 检查是否满足收敛条件
-    if len(convergence_window) == convergence_steps and all(delta < convergence_tol for delta in convergence_window):
-        logging.info(f'Steady-state reached at time step {t_step}, time={current_time:.2f}s')
-        # 存储当前状态
-        if t_step % store_every == 0:
-            if current_store >= stored_steps:
-                logging.warning('Stored_steps exceeded the preallocated size. Increasing storage arrays.')
-                phi_history = np.vstack([phi_history, phi])
-                N_I_history = np.vstack([N_I_history, N_I])
-                N_Xe_history = np.vstack([N_Xe_history, N_Xe])
-                time_history = np.append(time_history, current_time)
-                stored_steps += 1
-
-            phi_history[current_store] = phi
-            N_I_history[current_store] = N_I
-            N_Xe_history[current_store] = N_Xe
-            time_history[current_store] = current_time
-            current_store += 1
-        break  # 退出时间循环
 
     # 按需存储结果
     if t_step % store_every == 0:
-        logging.info(f'Processing time step {t_step}/{nt}, time={current_time:.2f}s')
+        logging.info(f'Processing time step {t_step}/{nt}, time={t_step * delta_t:.2f}s')
 
         if current_store >= stored_steps:
             logging.warning('Stored_steps exceeded the preallocated size. Increasing storage arrays.')
@@ -166,26 +138,21 @@ for t_step in range(max_steps):
             phi_history = np.vstack([phi_history, phi])
             N_I_history = np.vstack([N_I_history, N_I])
             N_Xe_history = np.vstack([N_Xe_history, N_Xe])
-            time_history = np.append(time_history, current_time)
+            time_history = np.append(time_history, t_step * delta_t)
             stored_steps += 1
 
         phi_history[current_store] = phi
         N_I_history[current_store] = N_I
         N_Xe_history[current_store] = N_Xe
-        time_history[current_store] = current_time
+        time_history[current_store] = t_step * delta_t
         current_store += 1
-
-    # 不稳定性检测（例如，变量超过一定范围）
-    if np.any(phi > 1e20) or np.any(N_I > 1e10) or np.any(N_Xe > 1e10):
-        logging.error(f'Variables exceeded physical limits at time step {t_step}, time {current_time:.2f}s')
-        break
 
 # 处理最后一步（如果未存储）
 if current_store < stored_steps:
     phi_history[current_store] = phi
     N_I_history[current_store] = N_I
     N_Xe_history[current_store] = N_Xe
-    time_history[current_store] = t_step * delta_t
+    time_history[current_store] = nt * delta_t
 
 # 修剪存储数组以去除未使用的预分配部分
 phi_history = phi_history[:current_store]
@@ -225,6 +192,8 @@ if not validate_data(N_Xe_history, 'N_Xe'):
 if np.any(np.isnan(time_history)) or np.any(np.isinf(time_history)):
     logging.error('Invalid values detected in time history.')
     exit(1)
+
+# %% 绘图优化
 
 # 选择绘图时使用的时间点
 # 例如，绘制初始、中间和结束时刻
