@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+import matplotlib.animation as animation
 import logging
 
 # 设置日志记录
@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # 参数定义
 # 空间域
-L = 10.0  # 一维空间长度，单位cm
+L = 1000  # 一维空间长度，单位cm
 nx = 100  # 增加空间离散点数以提高空间分辨率
 dx = L / (nx - 1)
 x = np.linspace(0, L, nx)
@@ -20,12 +20,12 @@ delta_t = 0.001      # 时间步长，单位s
 nt = int(total_time / delta_t)
 
 # 物理参数
-D = 1.0            # 扩散系数，cm²/s
+D = 1.02            # 扩散系数，cm²/s
 sigma_a_Xe = 2.7e-18  # Xe吸收截面，cm²
 nu = 2.73             # 中子产额
 Sigma_f = 0.043      # 裂变截面，cm²
-gamma_I = 6.386e-2   # I-135的产生速率
-gamma_Xe = 0.228e-2  # Xe-135的产生速率
+gamma_I = 6.386e-2   # I-135的产额
+gamma_Xe = 0.228e-2  # Xe-135的产额
 lambda_I = 2.87e-5   # I-135的衰变常数，s⁻¹
 lambda_Xe = 2.09e-5  # Xe-135的衰变常数，s⁻¹
 beta = 0.0065        # 缓发中子产额
@@ -47,8 +47,7 @@ phi = phi_initial.copy()
 N_I = N_I_initial.copy()
 N_Xe = N_Xe_initial.copy()
 
-# 优化数据存储：预分配数组并按需存储
-# 例如，每隔100步存储一次
+# 每隔100步存储一次
 store_every = 100
 stored_steps = nt // store_every + 1
 
@@ -60,15 +59,23 @@ time_history = np.zeros(stored_steps)
 current_store = 0
 
 def compute_phi_derivative(phi, rho, beta, Lambda, N_Xe):
-    d2phi_dx2 = np.zeros_like(phi)
-    d2phi_dx2[1:-1] = (phi[2:] - 2 * phi[1:-1] + phi[:-2]) / dx**2
+    # 引入虚拟点
+    phi_extended = np.zeros(nx + 2, dtype=np.float64)
+    phi_extended[1:-1] = phi
 
-    # 边界条件
-    d2phi_dx2[0] = 0
-    d2phi_dx2[-1] = 0
+    # 应用第一类边界条件（Dirichlet 边界条件）
+    # 假设边界值固定为0
+    phi_extended[0] = 0.0          # 左边界
+    phi_extended[-1] = 0.0         # 右边界
 
-    # dphi_dt = D * d2phi_dx2 - sigma_a_Xe * N_Xe * phi + nu * Sigma_f * phi
-    dphi_dt = D * d2phi_dx2 - sigma_a_Xe * N_Xe * phi + nu * Sigma_f * phi - ((rho - beta) / Lambda) * phi
+    # 计算二阶导数
+    d2phi_dx2 = (phi_extended[2:] - 2 * phi_extended[1:-1] + phi_extended[:-2]) / dx**2
+
+    # 计算 dphi/dt
+    dphi_dt = D * d2phi_dx2 - sigma_a_Xe * N_Xe * phi + nu * Sigma_f * phi
+    # 如果需要包含其他项，可以取消注释并调整
+    # dphi_dt = (D * d2phi_dx2 - sigma_a_Xe * N_Xe * phi + nu * Sigma_f * phi 
+    #            - ((rho - beta) / Lambda) * phi)
 
     return dphi_dt
 
@@ -77,59 +84,108 @@ def iodine_xenon_dynamics(phi, N_I, N_Xe):
     dN_Xe_dt = lambda_I * N_I + gamma_Xe * Sigma_f * phi - (lambda_Xe + sigma_a_Xe * phi) * N_Xe
     return dN_I_dt, dN_Xe_dt
 
+# 收敛参数定义
+convergence_tol = 1e3  # 定义收敛的容忍度（根据问题规模调整）
+convergence_steps = 100  # 连续满足收敛条件的步数
+convergence_window = []  # 用于记录最近的变化量
+
+# 最大迭代步数（可根据需要调整）
+max_steps = 170000
+
 # 时间循环
-for t_step in range(nt):
+for t_step in range(max_steps):
+    if t_step >= nt:
+        logging.warning('Reached the predefined maximum number of iterations.')
+        break
+
     current_time = t_step * delta_t
-    dphi_dt = compute_phi_derivative(phi, rho, beta, Lambda, N_Xe)
+
+    # 计算动态
     dN_I_dt, dN_Xe_dt = iodine_xenon_dynamics(phi, N_I, N_Xe)
-
-    # 更新变量
-    phi += delta_t * dphi_dt
-    N_I += delta_t * dN_I_dt
-    N_Xe += delta_t * dN_Xe_dt
-
-    # 边界条件
-    phi[0] = 0
-    phi[-1] = 0
+    N_I_new = N_I + delta_t * dN_I_dt
+    N_Xe_new = N_Xe + delta_t * dN_Xe_dt
+    dphi_dt = compute_phi_derivative(phi, rho, beta, Lambda, N_Xe)
+    phi_new = phi + delta_t * dphi_dt
 
     # 数据验证
-    if np.any(np.isnan(phi)) or np.any(np.isinf(phi)):
+    if np.any(np.isnan(phi_new)) or np.any(np.isinf(phi_new)):
         logging.error(f'Invalid values detected in phi at time step {t_step}, time {current_time:.2f}s')
-        print(phi)
         break  # 或者采取其他错误处理措施
-    
-    if np.any(np.isnan(N_I)) or np.any(np.isinf(N_I)):
+
+    if np.any(np.isnan(N_I_new)) or np.any(np.isinf(N_I_new)):
         logging.error(f'Invalid values detected in N_I at time step {t_step}, time {current_time:.2f}s')
         break
-    
-    if np.any(np.isnan(N_Xe)) or np.any(np.isinf(N_Xe)):
+
+    if np.any(np.isnan(N_Xe_new)) or np.any(np.isinf(N_Xe_new)):
         logging.error(f'Invalid values detected in N_Xe at time step {t_step}, time {current_time:.2f}s')
         break
-    
+
+    # 更新变量
+    phi = phi_new
+    N_I = N_I_new
+    N_Xe = N_Xe_new
+
+    # 计算变化量（使用绝对差的最大值作为变化指标）
+    delta_phi = np.max(np.abs(phi - phi_history[current_store - 1] if current_store > 0 else phi))
+    delta_N_I = np.max(np.abs(N_I - (N_I_history[current_store - 1] if current_store > 0 else N_I)))
+    delta_N_Xe = np.max(np.abs(N_Xe - (N_Xe_history[current_store - 1] if current_store > 0 else N_Xe)))
+    max_delta = max(delta_phi, delta_N_I, delta_N_Xe)
+
+    # 更新收敛窗口
+    convergence_window.append(max_delta)
+    if len(convergence_window) > convergence_steps:
+        convergence_window.pop(0)
+
+    # 检查是否满足收敛条件
+    if len(convergence_window) == convergence_steps and all(delta < convergence_tol for delta in convergence_window):
+        logging.info(f'Steady-state reached at time step {t_step}, time={current_time:.2f}s')
+        # 存储当前状态
+        if t_step % store_every == 0:
+            if current_store >= stored_steps:
+                logging.warning('Stored_steps exceeded the preallocated size. Increasing storage arrays.')
+                phi_history = np.vstack([phi_history, phi])
+                N_I_history = np.vstack([N_I_history, N_I])
+                N_Xe_history = np.vstack([N_Xe_history, N_Xe])
+                time_history = np.append(time_history, current_time)
+                stored_steps += 1
+
+            phi_history[current_store] = phi
+            N_I_history[current_store] = N_I
+            N_Xe_history[current_store] = N_Xe
+            time_history[current_store] = current_time
+            current_store += 1
+        break  # 退出时间循环
 
     # 按需存储结果
     if t_step % store_every == 0:
+        logging.info(f'Processing time step {t_step}/{nt}, time={current_time:.2f}s')
+
         if current_store >= stored_steps:
             logging.warning('Stored_steps exceeded the preallocated size. Increasing storage arrays.')
             # 动态扩展存储数组
             phi_history = np.vstack([phi_history, phi])
             N_I_history = np.vstack([N_I_history, N_I])
             N_Xe_history = np.vstack([N_Xe_history, N_Xe])
-            time_history = np.append(time_history, t_step * delta_t)
+            time_history = np.append(time_history, current_time)
             stored_steps += 1
 
         phi_history[current_store] = phi
         N_I_history[current_store] = N_I
         N_Xe_history[current_store] = N_Xe
-        time_history[current_store] = t_step * delta_t
+        time_history[current_store] = current_time
         current_store += 1
+
+    # 不稳定性检测（例如，变量超过一定范围）
+    if np.any(phi > 1e20) or np.any(N_I > 1e10) or np.any(N_Xe > 1e10):
+        logging.error(f'Variables exceeded physical limits at time step {t_step}, time {current_time:.2f}s')
+        break
 
 # 处理最后一步（如果未存储）
 if current_store < stored_steps:
     phi_history[current_store] = phi
     N_I_history[current_store] = N_I
     N_Xe_history[current_store] = N_Xe
-    time_history[current_store] = nt * delta_t
+    time_history[current_store] = t_step * delta_t
 
 # 修剪存储数组以去除未使用的预分配部分
 phi_history = phi_history[:current_store]
@@ -170,15 +226,14 @@ if np.any(np.isnan(time_history)) or np.any(np.isinf(time_history)):
     logging.error('Invalid values detected in time history.')
     exit(1)
 
-# %% 绘图优化
-
 # 选择绘图时使用的时间点
 # 例如，绘制初始、中间和结束时刻
-plot_times = [0, total_time / 2, total_time]
+plot_times = [0, max_steps * delta_t / 4, max_steps * delta_t / 2, max_steps * delta_t]  
+
 plot_indices = []
 for t in plot_times:
     idx = np.argmin(np.abs(time_history - t))
-    if idx < len(time_history):
+    if (idx < len(time_history)):
         plot_indices.append(idx)
     else:
         logging.warning(f'Plot time {t} exceeds simulation time. Using last available index.')
@@ -194,11 +249,12 @@ for idx, t in zip(plot_indices, plot_times):
     plt.plot(x, phi_history[idx], label=f't={time_history[idx]:.1f}s')
 plt.xlabel('Position x (cm)')
 plt.ylabel('Neutron Flux φ(x, t) (neutrons/cm²/s)')
+plt.yscale('log')
 plt.title('Neutron Flux Distribution at Selected Times')
 plt.legend()
 plt.grid(True)
 plt.savefig(os.path.join(output_dir, 'Neutron_Flux_Distribution_Selected_Times.png'))
-plt.show()
+# plt.show()
 
 # 绘制I-135浓度分布
 plt.figure(figsize=(10, 6))
@@ -206,11 +262,12 @@ for idx, t in zip(plot_indices, plot_times):
     plt.plot(x, N_I_history[idx], label=f't={time_history[idx]:.1f}s')
 plt.xlabel('Position x (cm)')
 plt.ylabel('Iodine Concentration N_I(x, t)')
+plt.yscale('log')
 plt.title('Iodine Concentration Distribution at Selected Times')
 plt.legend()
 plt.grid(True)
 plt.savefig(os.path.join(output_dir, 'Iodine_Concentration_Distribution_Selected_Times.png'))
-plt.show()
+# plt.show()
 
 # 绘制Xe-135浓度分布
 plt.figure(figsize=(10, 6))
@@ -218,13 +275,15 @@ for idx, t in zip(plot_indices, plot_times):
     plt.plot(x, N_Xe_history[idx], label=f't={time_history[idx]:.1f}s')
 plt.xlabel('Position x (cm)')
 plt.ylabel('Xenon-135 Concentration N_Xe(x, t)')
+plt.yscale('log')
 plt.title('Xenon-135 Concentration Distribution at Selected Times')
 plt.legend()
 plt.grid(True)
 plt.savefig(os.path.join(output_dir, 'Xenon135_Concentration_Distribution_Selected_Times.png'))
-plt.show()
+# plt.show()
 
-# 可选：使用热图显示随时间和空间变化的分布
+
+# 使用热图显示随时间和空间变化的分布
 # 中子通量热图
 plt.figure(figsize=(10, 6))
 extent = [x.min(), x.max(), time_history.min(), time_history.max()]
@@ -256,23 +315,72 @@ plt.title('Xenon-135 Concentration Distribution Over Time')
 plt.savefig(os.path.join(output_dir, 'Xenon135_Concentration_Heatmap.png'))
 plt.show()
 
-# 可选：生成动画以动态展示变化
-# 注意：生成动画可能需要更长的时间和更多的存储空间
 
-# def animate(i):
-#     plt.clf()
-#     plt.plot(x, phi_history[i], label=f'φ at t={time_history[i]:.1f}s')
-#     plt.plot(x, N_I_history[i], label=f'I-135 at t={time_history[i]:.1f}s')
-#     plt.plot(x, N_Xe_history[i], label=f'Xe-135 at t={time_history[i]:.1f}s')
-#     plt.xlabel('Position x (cm)')
-#     plt.ylabel('Values')
-#     plt.title(f'Distribution at t={time_history[i]:.1f}s')
-#     plt.legend()
-#     plt.grid(True)
+# 设置全局绘图样式
+plt.style.use('ggplot')
 
-# fig = plt.figure(figsize=(10, 6))
-# ani = FuncAnimation(fig, animate, frames=stored_steps, interval=100)
-# ani.save(os.path.join(output_dir, 'Distribution_Animation.gif'), writer='imagemagick')
-# plt.show()
+# 创建中子通量动画
+def create_flux_animation(x, phi_history, time_history, output_path):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    def animate(i):
+        ax.clear()
+        ax.plot(x, phi_history[i], color='blue')
+        ax.set_xlabel('Position x (cm)')
+        ax.set_ylabel('Neutron Flux φ(x, t) (neutrons/cm²/s)')
+        ax.set_yscale('log')
+        ax.set_title(f'Neutron Flux Distribution at t={time_history[i]:.1f} s')
+        ax.grid(True)
+
+    flux_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
+    flux_anim.save(output_path, writer='imagemagick')
+    plt.close(fig)
+
+# 创建I-135浓度动画
+def create_I_concentration_animation(x, N_I_history, time_history, output_path):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    def animate(i):
+        ax.clear()
+        ax.plot(x, N_I_history[i], color='green')
+        ax.set_xlabel('Position x (cm)')
+        ax.set_ylabel('Iodine Concentration N_I(x, t)')
+        ax.set_yscale('log')
+        ax.set_title(f'Iodine Concentration Distribution at t={time_history[i]:.1f} s')
+        ax.grid(True)
+
+    I_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
+    I_anim.save(output_path, writer='imagemagick')
+    plt.close(fig)
+
+# 创建Xe-135浓度动画
+def create_Xe_concentration_animation(x, N_Xe_history, time_history, output_path):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    def animate(i):
+        ax.clear()
+        ax.plot(x, N_Xe_history[i], color='red')
+        ax.set_xlabel('Position x (cm)')
+        ax.set_ylabel('Xenon-135 Concentration N_Xe(x, t)')
+        ax.set_yscale('log')
+        ax.set_title(f'Xenon-135 Concentration Distribution at t={time_history[i]:.1f} s')
+        ax.grid(True)
+
+    Xe_anim = animation.FuncAnimation(fig, animate, frames=len(time_history), interval=10)
+    Xe_anim.save(output_path, writer='imagemagick')
+    plt.close(fig)
+
+# 保存动画的路径
+flux_gif_path = os.path.join(output_dir, 'Neutron_Flux_Distribution.gif')
+I_gif_path = os.path.join(output_dir, 'Iodine_Concentration_Distribution.gif')
+Xe_gif_path = os.path.join(output_dir, 'Xenon135_Concentration_Distribution.gif')
+
+# 创建并保存动画
+create_flux_animation(x, phi_history, time_history, flux_gif_path)
+create_I_concentration_animation(x, N_I_history, time_history, I_gif_path)
+create_Xe_concentration_animation(x, N_Xe_history, time_history, Xe_gif_path)
+
+print(f"动画已保存到 {output_dir}")
+
 
 print('Simulation and plotting completed successfully!')
