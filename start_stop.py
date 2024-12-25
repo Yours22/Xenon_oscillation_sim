@@ -1,4 +1,5 @@
 # %%
+import os
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
@@ -51,6 +52,10 @@ I_values,Xe_values=euler_method(iodine_xenon_dynamics, t, initial_conditions,Phi
 
 N_I_ideal = gamma_I * Sigma_f * Phi_start / lambda_I
 N_Xe_ideal = (gamma_I+gamma_Xe)* Sigma_f * Phi_start / (lambda_Xe+Sigma_a_Xe*Phi_start)
+print(N_I_ideal,N_Xe_ideal)
+output_dir = 'results'
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
 
 plt.figure()
 time = np.arange(0, t + delta_t, delta_t) / (24 * 3600)
@@ -62,7 +67,7 @@ plt.axhline(y=N_Xe_ideal, color='b', linestyle='--', label='Ideal Xenon-135 Conc
 plt.xlabel('Time (days)')
 plt.ylabel('Concentration')
 plt.legend()
-plt.savefig('Iodine_Xenon_start.png')
+plt.savefig(os.path.join(output_dir, 'Iodine_Xenon_start.png'))
 plt.close()
 
 # 模拟停堆过程 
@@ -78,7 +83,7 @@ plt.plot(time, Xe_values_final, label='Xenon-135 Concentration')
 plt.xlabel('Time (days)')
 plt.ylabel('Concentration')
 plt.legend()
-plt.savefig('results\Iodine_Xenon_stop.png')
+plt.savefig(os.path.join(output_dir, 'Iodine_Xenon_stop.png'))
 plt.close()
 
 # ## 到达稳态后开始耦合，即

@@ -7,7 +7,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 加载数据
-data_file = os.path.join('results', 'simulation_data.npz')
+data_file = os.path.join('results', 'simulation_data_with_keff_rho.npz')
 if not os.path.exists(data_file):
     logging.error(f'Data file {data_file} does not exist. Please run simulation.py first.')
     exit(1)
@@ -18,6 +18,9 @@ time_history = data['time_history']
 phi_history = data['phi_history']
 N_I_history = data['N_I_history']
 N_Xe_history = data['N_Xe_history']
+
+keff_history = data['keff_history']
+rho_history = data['rho_history']
 
 logging.info('Data loaded successfully.')
 
@@ -124,6 +127,80 @@ plot_file = os.path.join(output_dir, 'Combined_Plots.png')
 plt.savefig(plot_file)
 logging.info(f'Plots saved to {plot_file}')
 plt.show()
+
+# 可视化 rho 和 k_eff
+def plot_keff_rho(time_history, keff_history, rho_history):
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+    color = 'tab:blue'
+    ax1.set_xlabel('Time (s)')
+    ax1.set_ylabel('$k_{eff}$', color=color)
+    ax1.plot(time_history, keff_history, color=color, label='$k_{eff}$')
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.legend(loc='upper left')
+
+    ax2 = ax1.twinx()  # 共享 x 轴
+    color = 'tab:red'
+    ax2.set_ylabel('$\\rho$', color=color)
+    ax2.plot(time_history, rho_history, color=color, label='$\\rho$')
+    ax2.tick_params(axis='y', labelcolor=color)
+    ax2.legend(loc='upper right')
+
+    plt.title('$k_{eff}$ and $\\rho$ over Time')
+    plt.tight_layout()
+    plt.show()
+
+plot_keff_rho(time_history, keff_history, rho_history)
+
+# 可视化（可选）
+def animate_simulation(x, time_history, phi_history, N_I_history, N_Xe_history):
+    fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+
+    line1, = axs[0].plot([], [], 'b-')
+    axs[0].set_xlim(0, L)
+    axs[0].set_ylim(max(0, np.min(phi_history)), np.max(phi_history)*1.1)
+    axs[0].set_title('Neutron Flux (phi)')
+    axs[0].set_xlabel('Position (cm)')
+    axs[0].set_ylabel('Flux')
+
+    line2, = axs[1].plot([], [], 'r-')
+    axs[1].set_xlim(0, L)
+    axs[1].set_ylim(max(0, np.min(N_I_history)), np.max(N_I_history)*1.1)
+    axs[1].set_title('I-135 Concentration (N_I)')
+    axs[1].set_xlabel('Position (cm)')
+    axs[1].set_ylabel('Concentration')
+
+    line3, = axs[2].plot([], [], 'g-')
+    axs[2].set_xlim(0, L)
+    axs[2].set_ylim(max(0, np.min(N_Xe_history)), np.max(N_Xe_history)*1.1)
+    axs[2].set_title('Xe-135 Concentration (N_Xe)')
+    axs[2].set_xlabel('Position (cm)')
+    axs[2].set_ylabel('Concentration')
+
+    plt.tight_layout()
+
+    def init():
+        line1.set_data([], [])
+        line2.set_data([], [])
+        line3.set_data([], [])
+        return line1, line2, line3
+
+    def animate(i):
+        line1.set_data(x, phi_history[i])
+        line2.set_data(x, N_I_history[i])
+        line3.set_data(x, N_Xe_history[i])
+        return line1, line2, line3
+
+    ani = animation.FuncAnimation(
+        fig, animate, init_func=init,
+        frames=len(time_history), interval=50, blit=True
+    )
+
+    plt.show()
+
+# 取消注释以下行以查看动画
+# animate_simulation(x, time_history, phi_history, N_I_history, N_Xe_history)
+
 
 # 可选：创建动画（取消注释以下代码以生成动画）
 
